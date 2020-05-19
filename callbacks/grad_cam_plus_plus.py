@@ -1,0 +1,82 @@
+"""
+Callback Module for Grad CAM
+"""
+from datetime import datetime
+from pathlib import Path
+
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras.callbacks import Callback
+
+from tf_explain.core.grad_cam_plus_plus import GradCAMPLUSPLUS
+
+
+class GradCAMPLUSPLUSCallback(Callback):
+
+    """
+    Perform Grad CAM PLUS PLUS algorithm for a given input
+
+    Paper: [Grad-CAM++: Improved Visual Explanations forDeep Convolutional Networks (https://arxiv.org/pdf/1710.11063.pdf)
+    """
+
+    def __init__(
+        self,
+        validation_data,
+        class_index,
+        batch_mode,
+        last_valcb,
+        layer_name=None,
+        output_dir=Path("./logs/grad_cam_plus_plus"),
+    ):
+        """
+        Constructor.
+
+        Args:
+            validation_data (Tuple[np.ndarray, Optional[np.ndarray]]): Validation data
+                to perform the method on. Tuple containing (x, y).
+            class_index (int): Index of targeted class
+            layer_name (str): Targeted layer for GradCAM
+            output_dir (str): Output directory path
+        """
+        super(GradCAMPLUSPLUSCallback, self).__init__()
+        self.validation_data = validation_data
+        self.layer_name = layer_name
+        self.batch_mode = batch_mode
+        self.last_valcb = last_valcb
+        if self.batch_mode:
+            self.class_index = []
+        else:
+            self.class_index = class_index
+        self.output_dir = Path(output_dir) / datetime.now().strftime("%Y%m%d-%H%M%S.%f")
+        Path.mkdir(Path(self.output_dir), parents=True, exist_ok=True)
+
+        self.file_writer = tf.summary.create_file_writer(str(self.output_dir))
+        self.first = True
+
+    def on_epoch_end(self, epoch, logs=None):
+        """
+        Draw GradCAMPLUSPLUS outputs at each epoch end to Tensorboard.
+
+        Args:
+            epoch (int): Epoch index
+            logs (dict): Additional information on epoch
+        """
+        explainer = GradCAMPLUSPLUS()
+        heatmap = explainer.explain(
+                self.validation_data,
+                self.model,
+                self.first,
+                batch_mode = self.batch_mode,
+                class_index=self.class_index,
+                layer_name=self.layer_name,
+            )
+        if self.first:
+            self.first = False
+        
+        # Using the file writer, log the reshaped image.
+        with self.file_writer.as_default():
+            tf.summary.image("Grad CAM PLUS PLUS", np.array([heatmap]), step=epoch)
+        
+        if self.last_valcb:
+                self.validation_data.next()
+        
